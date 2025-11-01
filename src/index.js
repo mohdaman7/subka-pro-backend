@@ -66,7 +66,10 @@ async function bootstrap() {
     // CORS configuration
     app.use(
       cors({
-        origin: env.corsOrigin || true,
+        origin: [
+          "https://sabka-pro-hiring-coral.vercel.app", // your live frontend
+          "http://localhost:3000", // for local testing
+        ],
         credentials: true,
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
