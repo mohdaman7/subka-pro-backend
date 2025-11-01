@@ -171,14 +171,14 @@ async function bootstrap() {
       process.exit(0);
     });
 
-    const server = app.listen(env.port, () => {
+    const PORT = process.env.PORT || env.port || 4000;
+
+    const server = app.listen(PORT, () => {
       console.log(`🎉 Server started successfully!`);
       console.log(`📍 Environment: ${env.nodeEnv}`);
-      console.log(`🚀 API listening on http://localhost:${env.port}`);
-      console.log(
-        `📚 API Documentation: http://localhost:${env.port}/api/docs`
-      );
-      console.log(`❤️  Health check: http://localhost:${env.port}/health`);
+      console.log(`🚀 API listening on http://localhost:${PORT}`);
+      console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
+      console.log(`❤️  Health check: http://localhost:${PORT}/health`);
     });
 
     // Handle server errors
