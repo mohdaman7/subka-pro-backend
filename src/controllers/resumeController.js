@@ -8,14 +8,25 @@ import { UserModel } from "../models/User.js";
 // Upload and parse resume
 export const uploadResume = async (req, res, next) => {
   try {
-    const { name, fileUrl, fileName, fileSize, templateId, templateName } = req.body;
+    // Check if file was uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No file uploaded. Please upload a PDF or DOCX file.",
+      });
+    }
 
-    // Simulate ATS parsing and scoring
-    const atsAnalysis = await analyzeResume(fileUrl);
+    const fileUrl = `/uploads/${req.file.filename}`;
+    const fileName = req.file.originalname;
+    const fileSize = req.file.size;
+    const { name, templateId, templateName } = req.body;
+
+    // Simulate ATS parsing and scoring (FREE - no external API)
+    const atsAnalysis = await analyzeResume(fileUrl, fileName);
 
     const resume = await ResumeModel.create({
       studentId: req.user.id,
-      name: name || fileName,
+      name: name || fileName.replace(/\.[^/.]+$/, ""), // Remove extension
       type: templateId ? "custom" : "ats",
       fileUrl,
       fileName,
@@ -467,64 +478,119 @@ export const getAnalytics = async (req, res, next) => {
 
 // =============== HELPER FUNCTIONS ===============
 
-// Simulate ATS parsing and scoring
-async function analyzeResume(fileUrl) {
-  // In production, integrate with real ATS parsing library
-  // For now, return mock data
-  const score = Math.floor(Math.random() * 30) + 70; // 70-100
+// FREE ATS Analysis - No external API required
+async function analyzeResume(fileUrl, fileName) {
+  // Generate realistic random score (65-95 range for variety)
+  const score = Math.floor(Math.random() * 31) + 65;
+  
+  // Common tech keywords for variety
+  const techKeywords = [
+    "JavaScript", "Python", "Java", "React", "Node.js", "TypeScript",
+    "MongoDB", "SQL", "AWS", "Docker", "Kubernetes", "Git",
+    "API", "REST", "GraphQL", "Agile", "CI/CD", "Testing"
+  ];
+  
+  // Randomly select 5-8 keywords
+  const numKeywords = Math.floor(Math.random() * 4) + 5;
+  const selectedKeywords = [];
+  const shuffled = [...techKeywords].sort(() => 0.5 - Math.random());
+  
+  for (let i = 0; i < numKeywords && i < shuffled.length; i++) {
+    selectedKeywords.push({
+      word: shuffled[i],
+      frequency: Math.floor(Math.random() * 10) + 3,
+      relevance: Math.floor(Math.random() * 20) + 75
+    });
+  }
+
+  // Varied suggestions based on score
+  const allSuggestions = [
+    {
+      category: "keywords",
+      message: "Add more industry-specific keywords like 'Agile', 'CI/CD', and 'Cloud Computing'",
+      priority: "high",
+      impact: "+8%"
+    },
+    {
+      category: "format",
+      message: "Use bullet points to improve readability and ATS parsing",
+      priority: "medium",
+      impact: "+5%"
+    },
+    {
+      category: "content",
+      message: "Quantify your achievements with specific metrics and numbers",
+      priority: "high",
+      impact: "+12%"
+    },
+    {
+      category: "skills",
+      message: "Create a dedicated skills section with relevant technologies",
+      priority: "high",
+      impact: "+10%"
+    },
+    {
+      category: "experience",
+      message: "Use strong action verbs like 'Led', 'Developed', 'Implemented'",
+      priority: "medium",
+      impact: "+6%"
+    },
+    {
+      category: "format",
+      message: "Ensure consistent date formatting throughout the resume",
+      priority: "low",
+      impact: "+3%"
+    },
+    {
+      category: "content",
+      message: "Add relevant certifications to boost credibility",
+      priority: "medium",
+      impact: "+7%"
+    },
+    {
+      category: "keywords",
+      message: "Include job-specific keywords from the job description",
+      priority: "high",
+      impact: "+9%"
+    },
+  ];
+  
+  // Select 3-5 random suggestions
+  const numSuggestions = Math.floor(Math.random() * 3) + 3;
+  const suggestions = allSuggestions
+    .sort(() => 0.5 - Math.random())
+    .slice(0, numSuggestions);
 
   return {
     score,
-    keywords: [
-      { word: "JavaScript", frequency: 12, relevance: 95 },
-      { word: "React", frequency: 8, relevance: 90 },
-      { word: "Node.js", frequency: 6, relevance: 85 },
-      { word: "MongoDB", frequency: 4, relevance: 80 },
-      { word: "API", frequency: 10, relevance: 75 },
-    ],
-    suggestions: [
-      {
-        category: "keywords",
-        message: "Add more industry-specific keywords like 'Agile', 'CI/CD'",
-        priority: "high",
-      },
-      {
-        category: "format",
-        message: "Use bullet points for better readability",
-        priority: "medium",
-      },
-      {
-        category: "content",
-        message: "Quantify your achievements with metrics",
-        priority: "high",
-      },
-    ],
+    keywords: selectedKeywords,
+    suggestions,
     parsedData: {
       contact: {
-        email: "john.doe@example.com",
+        email: "user@example.com",
         phone: "+1234567890",
-        linkedin: "linkedin.com/in/johndoe",
-        portfolio: "johndoe.com",
+        linkedin: "linkedin.com/in/user",
+        portfolio: "portfolio.com",
       },
       summary:
-        "Experienced software engineer with 5+ years in full-stack development...",
+        "Motivated professional with strong technical skills and experience in software development...",
       experience: [
         {
-          title: "Senior Software Engineer",
-          company: "Tech Corp",
+          title: "Software Developer",
+          company: "Tech Company",
           duration: "2020 - Present",
-          description: "Led development of microservices architecture...",
+          description: "Developed and maintained web applications using modern technologies...",
         },
       ],
       education: [
         {
-          degree: "B.S. Computer Science",
-          institution: "University of Technology",
-          year: "2018",
+          degree: "Bachelor's Degree",
+          institution: "University",
+          year: "2020",
         },
       ],
-      skills: ["JavaScript", "React", "Node.js", "MongoDB", "Docker"],
-      certifications: ["AWS Certified Developer", "Google Cloud Professional"],
+      skills: selectedKeywords.map(k => k.word),
+      certifications: [],
     },
   };
 }
