@@ -21,6 +21,7 @@ import userRoutes from "./routes/user.js";
 import courseRoutes from "./routes/courses.js";
 import purchaseRoutes from "./routes/purchases.js";
 import resumeRoutes from "./routes/resume.js";
+import atsManagementRoutes from "./routes/atsManagement.js";
 
 // Rate limiting configuration
 // const limiter = rateLimit({
@@ -121,7 +122,8 @@ async function bootstrap() {
     app.use("/api/jobs", jobRoutes);
     app.use("/api/applications", applicationRoutes);
     app.use("/api/admin", crmRoutes); // Changed from /api/crm to /api/admin for better semantics
-    app.use("/api/admin/ats", atsRoutes); // ATS routes
+    app.use("/api/admin/ats", atsRoutes); // Legacy ATS routes
+    app.use("/api/ats-management", atsManagementRoutes); // New ATS Management System
     app.use("/api/leads", leadRoutes);
     app.use("/api/student", studentRoutes);
     app.use("/api/courses", courseRoutes);

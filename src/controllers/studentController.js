@@ -241,3 +241,22 @@ export async function getMySupportTicketById(req, res, next) {
     next(err);
   }
 }
+
+export async function getMyInterviews(req, res, next) {
+  try {
+    const { InterviewModel } = await import('../models/Interview.js');
+    
+    const interviews = await InterviewModel.find({ candidateId: req.user.id })
+      .populate('jobId', 'title department location')
+      .populate('employerId', 'firstName lastName companyName email')
+      .populate('applicationId', 'status')
+      .sort({ scheduledAt: -1 });
+
+    res.json({
+      success: true,
+      data: interviews
+    });
+  } catch (err) {
+    next(err);
+  }
+}

@@ -32,6 +32,7 @@ const scheduleInterviewSchema = z.object({
   timezone: z.string().min(1),
   durationMinutes: z.number().int().positive().max(8 * 60),
   type: z.enum(["video", "phone", "onsite"]),
+  stage: z.enum(["screening", "technical", "hr", "final", "cultural"]).optional(),
   meetingLink: z.string().url().optional(),
   location: z.string().optional(),
   panel: z.array(interviewPanelMemberSchema).default([]),
@@ -346,31 +347,11 @@ export const scheduleInterview = async (req, res, next) => {
     const { id } = req.params;
     const parsed = scheduleInterviewSchema.parse(req.body);
 
-    const application = await ApplicationModel.findOneAndUpdate(
-      { _id: id, employerId: req.user.id },
-      {
-        interview: {
-          scheduledAt: parsed.scheduledAt,
-          timezone: parsed.timezone,
-          durationMinutes: parsed.durationMinutes,
-          type: parsed.type,
-          meetingLink: parsed.meetingLink,
-          location: parsed.location,
-          panel: parsed.panel,
-          notes: parsed.notes,
-          status: "scheduled",
-          history: [
-            {
-              scheduledAt: parsed.scheduledAt,
-              reason: "initial schedule",
-            },
-          ],
-        },
-        status: "interview",
-        updatedAt: new Date(),
-      },
-      { new: true }
-    )
+    // Find the application
+    const application = await ApplicationModel.findOne({
+      _id: id,
+      employerId: req.user.id
+    })
       .populate("jobId", "title")
       .populate("studentId", "firstName lastName email");
 
@@ -381,10 +362,47 @@ export const scheduleInterview = async (req, res, next) => {
       });
     }
 
+    // Create Interview document
+    const { InterviewModel } = await import('../models/Interview.js');
+    const interview = await InterviewModel.create({
+      applicationId: application._id,
+      jobId: application.jobId._id,
+      candidateId: application.studentId._id,
+      employerId: req.user.id,
+      title: `Interview for ${application.jobId.title}`,
+      scheduledAt: parsed.scheduledAt,
+      timezone: parsed.timezone,
+      durationMinutes: parsed.durationMinutes,
+      type: parsed.type,
+      meetingLink: parsed.meetingLink,
+      location: parsed.location ? {
+        address: parsed.location,
+        instructions: parsed.notes
+      } : undefined,
+      interviewers: parsed.panel || [],
+      notes: parsed.notes,
+      status: "scheduled",
+      createdBy: req.user.id,
+      history: [{
+        action: 'scheduled',
+        performedBy: req.user.id,
+        reason: 'Initial schedule',
+        timestamp: new Date()
+      }]
+    });
+
+    // Update application status
+    application.status = "interview";
+    application.updatedAt = new Date();
+    await application.save();
+
     res.json({
       success: true,
-      data: application,
-      message: "Interview scheduled",
+      data: {
+        application,
+        interview
+      },
+      message: "Interview scheduled successfully",
     });
 
     try {
@@ -401,50 +419,82 @@ export const scheduleInterview = async (req, res, next) => {
   }
 };
 
+// Get interview by application ID (employer)
+export const getInterviewByApplicationId = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { InterviewModel } = await import('../models/Interview.js');
+    
+    // Find interview by application ID
+    const interview = await InterviewModel.findOne({
+      applicationId: id,
+      employerId: req.user.id,
+    })
+      .populate("candidateId", "firstName lastName email")
+      .populate("jobId", "title")
+      .sort({ createdAt: -1 }); // Get the latest interview
+
+    if (!interview) {
+      return res.json({
+        success: true,
+        data: null,
+        message: "No interview found for this application"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: interview
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // Reschedule interview (employer)
 export const rescheduleInterview = async (req, res, next) => {
   try {
     const { id } = req.params;
     const parsed = rescheduleInterviewSchema.parse(req.body);
 
-    const application = await ApplicationModel.findOne({
-      _id: id,
+    const { InterviewModel } = await import('../models/Interview.js');
+    
+    // Find interview by application ID
+    const interview = await InterviewModel.findOne({
+      applicationId: id,
       employerId: req.user.id,
-      "interview.status": { $in: ["scheduled", "rescheduled"] },
-    });
+      status: { $in: ["scheduled", "rescheduled"] },
+    })
+      .populate("candidateId", "firstName lastName email")
+      .populate("jobId", "title");
 
-    if (!application) {
+    if (!interview) {
       return res.status(404).json({
         success: false,
         message: "Interview not found or cannot be rescheduled",
       });
     }
 
-    application.interview = {
-      ...application.interview,
-      scheduledAt: parsed.scheduledAt,
-      timezone: parsed.timezone,
-      durationMinutes: parsed.durationMinutes,
-      type: parsed.type,
-      meetingLink: parsed.meetingLink,
-      location: parsed.location,
-      panel: parsed.panel,
-      notes: parsed.notes,
-      status: "rescheduled",
-      history: [
-        ...(application.interview?.history || []),
-        { scheduledAt: parsed.scheduledAt, reason: parsed.reason },
-      ],
-    };
+    // Use the reschedule method from the model
+    interview.reschedule(parsed.scheduledAt, parsed.reason || 'Rescheduled by employer', req.user.id);
+    
+    // Update other fields
+    interview.timezone = parsed.timezone;
+    interview.durationMinutes = parsed.durationMinutes;
+    interview.type = parsed.type;
+    interview.meetingLink = parsed.meetingLink;
+    if (parsed.location) {
+      interview.location = {
+        address: parsed.location,
+        instructions: parsed.notes
+      };
+    }
+    interview.interviewers = parsed.panel || interview.interviewers;
+    interview.notes = parsed.notes;
 
-    application.updatedAt = new Date();
+    await interview.save();
 
-    await application.save();
-
-    await application.populate("jobId", "title");
-    await application.populate("studentId", "firstName lastName email");
-
-    res.json({ success: true, data: application, message: "Interview rescheduled" });
+    res.json({ success: true, data: interview, message: "Interview rescheduled successfully" });
 
     try {
       await ActivityModel.create({
@@ -460,38 +510,280 @@ export const rescheduleInterview = async (req, res, next) => {
   }
 };
 
+// Update interview status (employer)
+export const updateInterviewStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status, reason, evaluation, result } = req.body;
+
+    const { InterviewModel } = await import('../models/Interview.js');
+    
+    const interview = await InterviewModel.findOne({
+      applicationId: id,
+      employerId: req.user.id,
+    })
+      .populate("candidateId", "firstName lastName email")
+      .populate("jobId", "title")
+      .sort({ createdAt: -1 });
+
+    if (!interview) {
+      return res.status(404).json({ success: false, message: "Interview not found" });
+    }
+
+    // Update interview status
+    interview.status = status;
+    
+    if (status === 'completed') {
+      interview.completedAt = new Date();
+      if (evaluation) {
+        interview.evaluation = {
+          ...interview.evaluation,
+          ...evaluation
+        };
+      }
+      if (result) {
+        interview.result = result;
+      }
+    } else if (status === 'cancelled') {
+      interview.cancelledAt = new Date();
+      interview.cancelReason = reason;
+    }
+
+    // Add to history
+    interview.history.push({
+      action: status,
+      performedBy: req.user.id,
+      reason: reason || `Status updated to ${status}`,
+      timestamp: new Date()
+    });
+
+    await interview.save();
+
+    // Update application status based on interview result
+    if (status === 'completed' && result) {
+      const application = await ApplicationModel.findById(id);
+      if (application) {
+        if (result === 'passed' || result === 'next-round') {
+          // Keep as interview or move to next stage
+          application.status = 'interview';
+        } else if (result === 'failed') {
+          application.status = 'rejected';
+        }
+        await application.save();
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      data: interview, 
+      message: `Interview ${status} successfully` 
+    });
+
+    try {
+      await ActivityModel.create({
+        employerId: req.user.id,
+        actorId: req.user.id,
+        type: `interview_${status}`,
+        target: { kind: "application", id: id, label: interview.jobId?.title },
+        meta: { status, reason, result },
+      });
+    } catch {}
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Complete interview with evaluation (employer)
+export const completeInterviewWithEvaluation = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { evaluation, result, feedback, recommendation } = req.body;
+
+    const { InterviewModel } = await import('../models/Interview.js');
+    
+    const interview = await InterviewModel.findOne({
+      applicationId: id,
+      employerId: req.user.id,
+    })
+      .populate("candidateId", "firstName lastName email")
+      .populate("jobId", "title")
+      .sort({ createdAt: -1 });
+
+    if (!interview) {
+      return res.status(404).json({ success: false, message: "Interview not found" });
+    }
+
+    // Complete the interview
+    interview.status = 'completed';
+    interview.completedAt = new Date();
+    interview.result = result || 'pending';
+    
+    interview.evaluation = {
+      technicalSkills: evaluation?.technicalSkills || 0,
+      communication: evaluation?.communication || 0,
+      problemSolving: evaluation?.problemSolving || 0,
+      culturalFit: evaluation?.culturalFit || 0,
+      overall: evaluation?.overall || 0,
+      strengths: evaluation?.strengths || [],
+      weaknesses: evaluation?.weaknesses || [],
+      feedback: feedback || evaluation?.feedback || '',
+      recommendation: recommendation || evaluation?.recommendation || 'pending'
+    };
+
+    interview.history.push({
+      action: 'completed',
+      performedBy: req.user.id,
+      reason: 'Interview completed with evaluation',
+      timestamp: new Date()
+    });
+
+    await interview.save();
+
+    // Update application status
+    const application = await ApplicationModel.findById(id);
+    if (application) {
+      if (result === 'passed' || result === 'next-round') {
+        application.status = 'interview';
+      } else if (result === 'failed') {
+        application.status = 'rejected';
+      }
+      await application.save();
+    }
+
+    res.json({ 
+      success: true, 
+      data: interview, 
+      message: 'Interview completed successfully' 
+    });
+
+    try {
+      await ActivityModel.create({
+        employerId: req.user.id,
+        actorId: req.user.id,
+        type: 'interview_completed',
+        target: { kind: "application", id: id, label: interview.jobId?.title },
+        meta: { result, recommendation },
+      });
+    } catch {}
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Schedule next round interview (employer)
+export const scheduleNextRound = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const parsed = scheduleInterviewSchema.parse(req.body);
+
+    const { InterviewModel } = await import('../models/Interview.js');
+    
+    // Get the previous interview
+    const previousInterview = await InterviewModel.findOne({
+      applicationId: id,
+      employerId: req.user.id,
+    })
+      .populate("jobId", "title")
+      .populate("candidateId", "firstName lastName email")
+      .sort({ round: -1 });
+
+    if (!previousInterview) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Previous interview not found" 
+      });
+    }
+
+    const application = await ApplicationModel.findById(id);
+    if (!application) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Application not found" 
+      });
+    }
+
+    // Create next round interview
+    const nextRound = previousInterview.round + 1;
+    const interview = await InterviewModel.create({
+      applicationId: id,
+      jobId: application.jobId,
+      candidateId: application.studentId,
+      employerId: req.user.id,
+      title: `${parsed.stage || 'Interview'} - Round ${nextRound}`,
+      scheduledAt: parsed.scheduledAt,
+      timezone: parsed.timezone,
+      durationMinutes: parsed.durationMinutes,
+      type: parsed.type,
+      meetingLink: parsed.meetingLink,
+      location: parsed.location ? {
+        address: parsed.location,
+        instructions: parsed.notes
+      } : undefined,
+      interviewers: parsed.panel || [],
+      notes: parsed.notes,
+      status: "scheduled",
+      round: nextRound,
+      stage: parsed.stage || 'technical',
+      createdBy: req.user.id,
+      history: [{
+        action: 'scheduled',
+        performedBy: req.user.id,
+        reason: `Round ${nextRound} scheduled`,
+        timestamp: new Date()
+      }]
+    });
+
+    res.json({
+      success: true,
+      data: interview,
+      message: `Round ${nextRound} interview scheduled successfully`,
+    });
+
+    try {
+      await ActivityModel.create({
+        employerId: req.user.id,
+        actorId: req.user.id,
+        type: "interview_scheduled",
+        target: { kind: "application", id: id, label: application.jobId?.title },
+        meta: { scheduledAt: parsed.scheduledAt, type: parsed.type, round: nextRound },
+      });
+    } catch {}
+  } catch (err) {
+    next(err);
+  }
+};
+
 // Cancel interview (employer)
 export const cancelInterview = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reason } = req.body || {};
 
-    const application = await ApplicationModel.findOneAndUpdate(
-      { _id: id, employerId: req.user.id },
-      {
-        $set: {
-          "interview.status": "cancelled",
-        },
-        $push: {
-          "interview.history": { scheduledAt: new Date(), reason: reason || "cancelled" },
-        },
-        updatedAt: new Date(),
-      },
-      { new: true }
-    );
+    const { InterviewModel } = await import('../models/Interview.js');
+    
+    const interview = await InterviewModel.findOne({
+      applicationId: id,
+      employerId: req.user.id,
+    })
+      .populate("candidateId", "firstName lastName email")
+      .populate("jobId", "title")
+      .sort({ createdAt: -1 });
 
-    if (!application) {
+    if (!interview) {
       return res.status(404).json({ success: false, message: "Interview not found" });
     }
 
-    res.json({ success: true, data: application, message: "Interview cancelled" });
+    interview.cancel(reason || 'Cancelled by employer', req.user.id);
+    await interview.save();
+
+    res.json({ success: true, data: interview, message: "Interview cancelled" });
 
     try {
       await ActivityModel.create({
         employerId: req.user.id,
         actorId: req.user.id,
         type: "interview_cancelled",
-        target: { kind: "application", id: application._id, label: undefined },
+        target: { kind: "application", id: id, label: interview.jobId?.title },
         meta: { reason },
       });
     } catch {}

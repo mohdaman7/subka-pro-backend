@@ -49,4 +49,12 @@ router.get(
   studentController.getActivity
 );
 
+// Get student interviews
+router.get(
+  "/interviews",
+  authenticate,
+  authorize(["student"]),
+  studentController.getMyInterviews
+);
+
 export default router;
