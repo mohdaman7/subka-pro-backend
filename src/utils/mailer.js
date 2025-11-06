@@ -550,3 +550,119 @@ export async function sendOTPEmail(email, otp) {
     console.error("❌ Failed to send OTP email:", error.message);
   }
 }
+
+// Import email templates
+import { emailTemplates } from "./emailTemplates.js";
+
+// Send Application Status Change Email
+export async function sendApplicationStatusEmail(data) {
+  try {
+    const statusConfig = {
+      shortlisted: { emoji: "⭐", color: "#3b82f6" },
+      interviewing: { emoji: "📅", color: "#8b5cf6" },
+      offered: { emoji: "🎉", color: "#22c55e" },
+      hired: { emoji: "🎊", color: "#10b981" },
+      rejected: { emoji: "❌", color: "#ef4444" },
+    };
+
+    const config = statusConfig[data.newStatus] || { emoji: "📋", color: "#6b7280" };
+
+    await transporter.sendMail({
+      from: `"Sabka Pro" <${env.smtpUser}>`,
+      to: data.candidateEmail,
+      subject: `Application Status Update - ${data.jobTitle}`,
+      html: emailTemplates.applicationStatusChange({
+        ...data,
+        statusEmoji: config.emoji,
+        statusColor: config.color,
+      }),
+    });
+
+    console.log(`✅ Status change email sent to: ${data.candidateEmail}`);
+  } catch (error) {
+    console.error("❌ Failed to send status change email:", error.message);
+  }
+}
+
+// Send Interview Scheduled Email
+export async function sendInterviewScheduledEmail(data) {
+  try {
+    await transporter.sendMail({
+      from: `"Sabka Pro" <${env.smtpUser}>`,
+      to: data.candidateEmail,
+      subject: `Interview Scheduled - ${data.jobTitle}`,
+      html: emailTemplates.interviewScheduled(data),
+    });
+
+    console.log(`✅ Interview scheduled email sent to: ${data.candidateEmail}`);
+  } catch (error) {
+    console.error("❌ Failed to send interview email:", error.message);
+  }
+}
+
+// Send Application Received Email
+export async function sendApplicationReceivedEmail(data) {
+  try {
+    await transporter.sendMail({
+      from: `"Sabka Pro" <${env.smtpUser}>`,
+      to: data.candidateEmail,
+      subject: `Application Received - ${data.jobTitle}`,
+      html: emailTemplates.applicationReceived(data),
+    });
+
+    console.log(`✅ Application received email sent to: ${data.candidateEmail}`);
+  } catch (error) {
+    console.error("❌ Failed to send application received email:", error.message);
+  }
+}
+
+// Send Team Invitation Email
+export async function sendTeamInvitationEmail(data) {
+  try {
+    await transporter.sendMail({
+      from: `"Sabka Pro" <${env.smtpUser}>`,
+      to: data.inviteeEmail,
+      subject: `Team Invitation - ${data.companyName}`,
+      html: emailTemplates.teamInvitation(data),
+    });
+
+    console.log(`✅ Team invitation email sent to: ${data.inviteeEmail}`);
+  } catch (error) {
+    console.error("❌ Failed to send team invitation email:", error.message);
+  }
+}
+
+// Send Candidate Hired Email
+export async function sendCandidateHiredEmail(data) {
+  try {
+    await transporter.sendMail({
+      from: `"Sabka Pro" <${env.smtpUser}>`,
+      to: data.candidateEmail,
+      subject: `Congratulations! You've been selected - ${data.position}`,
+      html: emailTemplates.candidateHired(data),
+    });
+
+    console.log(`✅ Candidate hired email sent to: ${data.candidateEmail}`);
+  } catch (error) {
+    console.error("❌ Failed to send candidate hired email:", error.message);
+  }
+}
+
+// Send Interview Reminder Email (24 hours before)
+export async function sendInterviewReminderEmail(data) {
+  try {
+    await transporter.sendMail({
+      from: `"Sabka Pro" <${env.smtpUser}>`,
+      to: data.candidateEmail,
+      subject: `Reminder: Interview Tomorrow - ${data.jobTitle}`,
+      html: emailTemplates.interviewScheduled({
+        ...data,
+        isReminder: true,
+      }),
+    });
+
+    console.log(`✅ Interview reminder sent to: ${data.candidateEmail}`);
+  } catch (error) {
+    console.error("❌ Failed to send interview reminder:", error.message);
+  }
+}

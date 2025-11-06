@@ -16,6 +16,7 @@ import {
   scheduleNextRound,
   cancelInterview,
   completeInterview,
+  hireCandidate,
 } from "../controllers/applicationController.js";
 import { limitByPlan } from "../middleware/plan.js";
 
@@ -129,6 +130,14 @@ router.patch(
   authenticate,
   authorize(["employer", "admin"]),
   cancelInterview
+);
+
+// Hire candidate route (employer)
+router.post(
+  "/:id/hire",
+  authenticate,
+  authorize(["employer", "admin"]),
+  hireCandidate
 );
 
 export default router;

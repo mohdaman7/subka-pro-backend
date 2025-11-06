@@ -3,6 +3,12 @@ import { ApplicationModel } from "../models/Application.js";
 import { ActivityModel } from "../models/Activity.js";
 import { JobModel } from "../models/Job.js";
 import mongoose from "mongoose";
+import {
+  sendApplicationReceivedEmail,
+  sendApplicationStatusEmail,
+  sendInterviewScheduledEmail,
+  sendCandidateHiredEmail,
+} from "../utils/mailer.js";
 
 // Validation schemas
 export const applySchema = z.object({
@@ -45,6 +51,14 @@ const rescheduleInterviewSchema = scheduleInterviewSchema.extend({
 
 const interviewFeedbackSchema = z.object({
   feedback: z.string().min(1).max(2000),
+});
+
+const hireCandidateSchema = z.object({
+  position: z.string().min(1).max(200),
+  joiningDate: z.coerce.date(),
+  salary: z.number().positive(),
+  offerLetter: z.string().url().optional(),
+  notes: z.string().max(1000).optional(),
 });
 
 // Apply for a job
@@ -118,6 +132,20 @@ export const applyForJob = async (req, res, next) => {
       data: application,
       message: "Application submitted successfully",
     });
+
+    // Send application received email
+    try {
+      const companyName = application.jobId?.employerId?.employerProfile?.company?.name || "the company";
+      await sendApplicationReceivedEmail({
+        candidateEmail: req.user.email,
+        candidateName: `${req.user.firstName} ${req.user.lastName}`,
+        jobTitle: application.jobId.title,
+        companyName: companyName,
+        location: application.jobId.location || "Remote"
+      });
+    } catch (emailError) {
+      console.error("Failed to send application received email:", emailError);
+    }
   } catch (err) {
     next(err);
   }
@@ -336,6 +364,20 @@ export const updateApplicationStatus = async (req, res, next) => {
       data: application,
       message: `Application status updated to ${parsed.status}`,
     });
+
+    // Send status change email
+    try {
+      await sendApplicationStatusEmail({
+        candidateEmail: application.studentId.email,
+        candidateName: `${application.studentId.firstName} ${application.studentId.lastName}`,
+        jobTitle: application.jobId.title,
+        companyName: application.jobId.company || "Our Company",
+        newStatus: parsed.status,
+        message: parsed.feedback
+      });
+    } catch (emailError) {
+      console.error("Failed to send status change email:", emailError);
+    }
   } catch (err) {
     next(err);
   }
@@ -414,6 +456,33 @@ export const scheduleInterview = async (req, res, next) => {
         meta: { scheduledAt: parsed.scheduledAt, type: parsed.type },
       });
     } catch {}
+
+    // Send interview scheduled email
+    try {
+      await sendInterviewScheduledEmail({
+        candidateEmail: application.studentId.email,
+        candidateName: `${application.studentId.firstName} ${application.studentId.lastName}`,
+        jobTitle: application.jobId.title,
+        companyName: application.jobId.company || "Our Company",
+        dateTime: new Date(parsed.scheduledAt).toLocaleString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }),
+        duration: parsed.durationMinutes,
+        type: parsed.type,
+        stage: parsed.stage || "Interview",
+        meetingLink: parsed.meetingLink,
+        location: parsed.location,
+        interviewers: parsed.panel || [],
+        notes: parsed.notes
+      });
+    } catch (emailError) {
+      console.error("Failed to send interview email:", emailError);
+    }
   } catch (err) {
     next(err);
   }
@@ -951,6 +1020,89 @@ export const getApplicationStats = async (req, res, next) => {
         recentActivity: recentApplications,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Hire candidate (employer)
+export const hireCandidate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const parsed = hireCandidateSchema.parse(req.body);
+
+    const application = await ApplicationModel.findById(id)
+      .populate("jobId", "title")
+      .populate("studentId", "firstName lastName email");
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: "Application not found",
+      });
+    }
+
+    // Verify employer owns this application
+    if (application.employerId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized to hire for this application",
+      });
+    }
+
+    // Update application status to hired
+    application.status = "hired";
+    application.hireData = {
+      position: parsed.position,
+      joiningDate: parsed.joiningDate,
+      salary: parsed.salary,
+      offerLetter: parsed.offerLetter,
+      notes: parsed.notes,
+      hiredAt: new Date(),
+      hiredBy: req.user.id,
+    };
+
+    await application.save();
+
+    // Log activity
+    await ActivityModel.create({
+      employerId: application.employerId,
+      actorId: req.user.id,
+      type: "application_status_changed",
+      target: {
+        kind: "application",
+        id: application._id,
+        label: `${application.studentId.firstName} ${application.studentId.lastName} - ${application.jobId.title}`,
+      },
+      meta: {
+        previousStatus: application.status,
+        newStatus: "hired",
+        position: parsed.position,
+        salary: parsed.salary,
+        hiredBy: req.user.id,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Candidate hired successfully",
+      data: application,
+    });
+
+    // Send candidate hired email
+    try {
+      await sendCandidateHiredEmail({
+        candidateEmail: application.studentId.email,
+        candidateName: `${application.studentId.firstName} ${application.studentId.lastName}`,
+        position: parsed.position,
+        companyName: application.jobId.company || "Our Company",
+        salary: parsed.salary,
+        joiningDate: parsed.joiningDate,
+        notes: parsed.notes
+      });
+    } catch (emailError) {
+      console.error("Failed to send hired email:", emailError);
+    }
   } catch (err) {
     next(err);
   }

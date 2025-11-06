@@ -4,6 +4,8 @@ import { TeamModel } from "../models/Team.js";
 import { CandidateNoteModel } from "../models/CandidateNote.js";
 import { ActivityModel } from "../models/Activity.js";
 import { SavedViewModel } from "../models/SavedView.js";
+import { sendTeamInvitationEmail } from "../utils/mailer.js";
+import { env } from "../config/env.js";
 
 // Helpers
 async function recordActivity({ employerId, actorId, type, target, meta }) {
@@ -63,6 +65,24 @@ export const inviteTeamMember = async (req, res, next) => {
     });
 
     res.status(201).json({ success: true, data: team, message: "Invitation recorded" });
+
+    // Send team invitation email
+    try {
+      const { UserModel } = await import("../models/User.js");
+      const inviter = await UserModel.findById(req.user.id).populate("employerProfile");
+      const companyName = inviter?.employerProfile?.company?.name || "Our Company";
+      
+      await sendTeamInvitationEmail({
+        inviteeEmail: parsed.email,
+        inviterName: `${req.user.firstName} ${req.user.lastName}`,
+        companyName: companyName,
+        role: parsed.role,
+        acceptLink: `${env.corsOrigin}/employer/team/accept/${team._id}`,
+        declineLink: `${env.corsOrigin}/employer/team/decline/${team._id}`
+      });
+    } catch (emailError) {
+      console.error("Failed to send team invitation email:", emailError);
+    }
   } catch (err) { next(err); }
 };
 
