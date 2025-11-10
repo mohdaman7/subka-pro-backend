@@ -412,6 +412,11 @@ export const getATSDashboardStats = async (req, res) => {
 
     const applicationsOverTime = await ApplicationModel.aggregate([
       { $match: { ...employerFilter, createdAt: { $gte: thirtyDaysAgo } } },
+      {
+        $match: {
+          createdAt: { $exists: true, $ne: null, $type: "date" }
+        }
+      },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
