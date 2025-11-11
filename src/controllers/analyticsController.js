@@ -5,6 +5,7 @@ import { EmployerModel as Employer } from "../models/Employer.js";
 import { JobModel as Job } from "../models/Job.js";
 import { CourseModel as Course } from "../models/Course.js";
 import { CourseProgressModel as CourseProgress } from "../models/CourseProgress.js";
+import { CourseEnrollment } from "../models/CourseEnrollment.js";
 import { PurchaseModel as Purchase } from "../models/Purchase.js";
 import { InterviewModel as Interview } from "../models/Interview.js";
 
@@ -637,12 +638,12 @@ export const getCourseAnalytics = async (req, res) => {
       if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
     }
 
-    // Course statistics
-    const totalCourses = await Course.countDocuments(dateFilter);
-    const activeCourses = await Course.countDocuments({ ...dateFilter, status: "active" });
+    // Course statistics - count from courses collection
+    const totalCourses = await Course.countDocuments();
+    const activeCourses = await Course.countDocuments({ status: "active" });
 
-    // Enrollment statistics
-    const enrollmentStats = await CourseProgress.aggregate([
+    // Enrollment statistics from CourseEnrollment model
+    const enrollmentStats = await CourseEnrollment.aggregate([
       { $match: dateFilter },
       {
         $group: {
@@ -654,60 +655,111 @@ export const getCourseAnalytics = async (req, res) => {
           inProgress: {
             $sum: { $cond: [{ $eq: ["$status", "in_progress"] }, 1, 0] },
           },
+          enrolled: {
+            $sum: { $cond: [{ $eq: ["$status", "enrolled"] }, 1, 0] },
+          },
           avgProgress: { $avg: "$progress" },
         },
       },
     ]);
 
-    // Top courses by enrollment
-    const topCourses = await CourseProgress.aggregate([
-      { $match: dateFilter },
+    // Top courses - show all courses with enrollment stats from CourseEnrollment
+    const topCourses = await Course.aggregate([
       {
         $lookup: {
-          from: "courses",
-          localField: "courseId",
-          foreignField: "_id",
-          as: "course",
+          from: "courseenrollments",
+          localField: "_id",
+          foreignField: "courseId",
+          as: "enrollments",
         },
       },
-      { $unwind: "$course" },
       {
-        $group: {
-          _id: "$course._id",
-          title: { $first: "$course.title" },
-          enrollments: { $sum: 1 },
+        $addFields: {
+          totalEnrollments: { $size: "$enrollments" },
           completed: {
-            $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] },
+            $size: {
+              $filter: {
+                input: "$enrollments",
+                as: "enrollment",
+                cond: { $eq: ["$$enrollment.status", "completed"] },
+              },
+            },
           },
-          avgProgress: { $avg: "$progress" },
+          inProgress: {
+            $size: {
+              $filter: {
+                input: "$enrollments",
+                as: "enrollment",
+                cond: { $eq: ["$$enrollment.status", "in_progress"] },
+              },
+            },
+          },
+          enrolledOnly: {
+            $size: {
+              $filter: {
+                input: "$enrollments",
+                as: "enrollment",
+                cond: { $eq: ["$$enrollment.status", "enrolled"] },
+              },
+            },
+          },
+          avgProgress: {
+            $cond: [
+              { $gt: [{ $size: "$enrollments" }, 0] },
+              { $avg: "$enrollments.progress" },
+              0
+            ]
+          },
+        },
+      },
+      {
+        $addFields: {
+          completionRate: {
+            $cond: [
+              { $gt: ["$totalEnrollments", 0] },
+              {
+                $multiply: [
+                  { $divide: ["$completed", "$totalEnrollments"] },
+                  100,
+                ],
+              },
+              0,
+            ],
+          },
         },
       },
       {
         $project: {
           title: 1,
-          enrollments: 1,
+          category: 1,
+          description: 1,
+          thumbnail: 1,
+          instructor: 1,
+          level: 1,
+          enrollments: "$totalEnrollments",
           completed: 1,
+          inProgress: 1,
+          enrolledOnly: 1,
           avgProgress: 1,
-          completionRate: {
-            $multiply: [{ $divide: ["$completed", "$enrollments"] }, 100],
-          },
+          completionRate: 1,
+          createdAt: 1,
         },
       },
-      { $sort: { enrollments: -1 } },
+      { $sort: { enrollments: -1, createdAt: -1 } },
       { $limit: 10 },
     ]);
 
-    // Course completion trend
-    const completionTrend = await CourseProgress.aggregate([
-      { $match: { ...dateFilter, status: "completed" } },
+    // Course completion trend from CourseEnrollment
+    const completionTrend = await CourseEnrollment.aggregate([
+      { $match: { status: "completed" } },
       {
         $match: {
-          updatedAt: { $exists: true, $ne: null, $type: "date" }
+          completedAt: { $exists: true, $ne: null, $type: "date" }
         }
       },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m", date: "$updatedAt" } },
+          _id: { $dateToString: { format: "%Y-%m", date: "$completedAt" } },
           count: { $sum: 1 },
         },
       },
@@ -922,38 +974,160 @@ export const exportReport = async (req, res) => {
 
 // Helper functions for export
 const getOverviewStatsData = async (startDate, endDate) => {
-  // Implementation similar to getOverviewStats
-  return {};
+  const dateFilter = {};
+  if (startDate || endDate) {
+    dateFilter.createdAt = {};
+    if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+    if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+  }
+
+  const [totalLeads, totalStudents, totalEmployers, totalJobs, totalApplications] = await Promise.all([
+    Lead.countDocuments(dateFilter),
+    Student.countDocuments(dateFilter),
+    Employer.countDocuments(dateFilter),
+    Job.countDocuments(dateFilter),
+    Application.countDocuments(dateFilter),
+  ]);
+
+  return {
+    totalLeads,
+    totalStudents,
+    totalEmployers,
+    totalJobs,
+    totalApplications,
+    generatedAt: new Date().toISOString(),
+  };
 };
 
 const getLeadConversionData = async (startDate, endDate) => {
-  // Implementation similar to getLeadConversionAnalytics
-  return {};
+  const dateFilter = {};
+  if (startDate || endDate) {
+    dateFilter.createdAt = {};
+    if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+    if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+  }
+
+  const leads = await Lead.find(dateFilter).select('status source createdAt').lean();
+  return {
+    totalLeads: leads.length,
+    byStatus: leads.reduce((acc, lead) => {
+      acc[lead.status] = (acc[lead.status] || 0) + 1;
+      return acc;
+    }, {}),
+    bySource: leads.reduce((acc, lead) => {
+      acc[lead.source] = (acc[lead.source] || 0) + 1;
+      return acc;
+    }, {}),
+  };
 };
 
 const getRevenueData = async (startDate, endDate) => {
-  // Implementation similar to getRevenueReports
-  return {};
+  const dateFilter = {};
+  if (startDate || endDate) {
+    dateFilter.createdAt = {};
+    if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+    if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+  }
+
+  const purchases = await Purchase.find({ ...dateFilter, status: "completed" })
+    .select('amount type createdAt')
+    .lean();
+
+  return {
+    totalRevenue: purchases.reduce((sum, p) => sum + (p.amount || 0), 0),
+    totalTransactions: purchases.length,
+    byType: purchases.reduce((acc, p) => {
+      acc[p.type] = (acc[p.type] || 0) + (p.amount || 0);
+      return acc;
+    }, {}),
+  };
 };
 
 const getPlacementData = async (startDate, endDate) => {
-  // Implementation similar to getPlacementAnalytics
-  return {};
+  const dateFilter = {};
+  if (startDate || endDate) {
+    dateFilter.createdAt = {};
+    if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+    if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+  }
+
+  const placements = await Application.find({ ...dateFilter, status: "hired" })
+    .populate('studentId', 'firstName lastName')
+    .populate('jobId', 'title')
+    .lean();
+
+  return {
+    totalPlacements: placements.length,
+    placements: placements.map(p => ({
+      student: p.studentId ? `${p.studentId.firstName} ${p.studentId.lastName}` : 'N/A',
+      job: p.jobId?.title || 'N/A',
+      date: p.createdAt,
+    })),
+  };
 };
 
 const getEmployerData = async (startDate, endDate) => {
-  // Implementation similar to getEmployerEngagement
-  return {};
+  const dateFilter = {};
+  if (startDate || endDate) {
+    dateFilter.createdAt = {};
+    if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+    if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+  }
+
+  const employers = await Employer.find(dateFilter)
+    .select('companyName email status createdAt')
+    .lean();
+
+  return {
+    totalEmployers: employers.length,
+    activeEmployers: employers.filter(e => e.status === 'active').length,
+    employers: employers.map(e => ({
+      company: e.companyName,
+      email: e.email,
+      status: e.status,
+      joinedAt: e.createdAt,
+    })),
+  };
 };
 
 const getCourseData = async (startDate, endDate) => {
-  // Implementation similar to getCourseAnalytics
-  return {};
+  const courses = await Course.find()
+    .select('title category status createdAt')
+    .lean();
+
+  return {
+    totalCourses: courses.length,
+    activeCourses: courses.filter(c => c.status === 'active').length,
+    courses: courses.map(c => ({
+      title: c.title,
+      category: c.category,
+      status: c.status,
+      createdAt: c.createdAt,
+    })),
+  };
 };
 
 const getStaffData = async (startDate, endDate) => {
-  // Implementation similar to getStaffPerformance
-  return {};
+  const dateFilter = {};
+  if (startDate || endDate) {
+    dateFilter.createdAt = {};
+    if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
+    if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+  }
+
+  // Get staff activities (leads created, applications processed, etc.)
+  const leads = await Lead.find(dateFilter).select('assignedTo').lean();
+  const staffActivity = leads.reduce((acc, lead) => {
+    if (lead.assignedTo) {
+      acc[lead.assignedTo] = (acc[lead.assignedTo] || 0) + 1;
+    }
+    return acc;
+  }, {});
+
+  return {
+    totalStaff: Object.keys(staffActivity).length,
+    activities: staffActivity,
+  };
 };
 
 // ==================== TOP EMPLOYERS ANALYTICS ====================

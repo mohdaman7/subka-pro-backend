@@ -23,6 +23,7 @@ import purchaseRoutes from "./routes/purchases.js";
 import resumeRoutes from "./routes/resume.js";
 import atsManagementRoutes from "./routes/atsManagement.js";
 import analyticsRoutes from "./routes/analytics.js";
+import enrollmentRoutes from "./routes/enrollment.js";
 
 // Rate limiting configuration
 // const limiter = rateLimit({
@@ -133,6 +134,7 @@ async function bootstrap() {
     app.use("/api/user", userRoutes);
     app.use("/api/resume", resumeRoutes);
     app.use("/api/analytics", analyticsRoutes);
+    app.use("/api/enrollments", enrollmentRoutes);
 
     // API documentation route (you can implement Swagger later)
     app.get("/api/docs", (_req, res) => {
