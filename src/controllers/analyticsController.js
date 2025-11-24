@@ -42,8 +42,16 @@ export const getOverviewStats = async (req, res) => {
       activeCourses,
     ] = await Promise.all([
       Lead.countDocuments({ ...dateFilter, ...staffFilter }),
-      Lead.countDocuments({ ...dateFilter, ...staffFilter, status: { $in: ["new", "contacted", "qualified"] } }),
-      Lead.countDocuments({ ...dateFilter, ...staffFilter, status: "converted" }),
+      Lead.countDocuments({
+        ...dateFilter,
+        ...staffFilter,
+        status: { $in: ["new", "contacted", "qualified"] },
+      }),
+      Lead.countDocuments({
+        ...dateFilter,
+        ...staffFilter,
+        status: "converted",
+      }),
       Purchase.aggregate([
         { $match: { ...dateFilter, status: "completed" } },
         { $group: { _id: null, total: { $sum: "$amount" } } },
@@ -60,8 +68,12 @@ export const getOverviewStats = async (req, res) => {
     ]);
 
     // Calculate conversion rate
-    const conversionRate = totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(2) : 0;
-    const placementRate = totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(2) : 0;
+    const conversionRate =
+      totalLeads > 0 ? ((convertedLeads / totalLeads) * 100).toFixed(2) : 0;
+    const placementRate =
+      totalStudents > 0
+        ? ((placedStudents / totalStudents) * 100).toFixed(2)
+        : 0;
 
     // Get revenue breakdown
     const revenueData = totalRevenue.length > 0 ? totalRevenue[0].total : 0;
@@ -74,8 +86,8 @@ export const getOverviewStats = async (req, res) => {
       { $match: { createdAt: { $gte: sixMonthsAgo }, ...staffFilter } },
       {
         $match: {
-          createdAt: { $exists: true, $ne: null, $type: "date" }
-        }
+          createdAt: { $exists: true, $ne: null, $type: "date" },
+        },
       },
       {
         $group: {
@@ -90,8 +102,8 @@ export const getOverviewStats = async (req, res) => {
       { $match: { createdAt: { $gte: sixMonthsAgo }, status: "completed" } },
       {
         $match: {
-          createdAt: { $exists: true, $ne: null, $type: "date" }
-        }
+          createdAt: { $exists: true, $ne: null, $type: "date" },
+        },
       },
       {
         $group: {
@@ -220,7 +232,14 @@ export const getLeadConversionAnalytics = async (req, res) => {
 
     // Average time to conversion
     const avgConversionTime = await Lead.aggregate([
-      { $match: { ...dateFilter, ...staffFilter, status: "converted", convertedAt: { $exists: true } } },
+      {
+        $match: {
+          ...dateFilter,
+          ...staffFilter,
+          status: "converted",
+          convertedAt: { $exists: true },
+        },
+      },
       {
         $project: {
           conversionTime: {
@@ -242,7 +261,10 @@ export const getLeadConversionAnalytics = async (req, res) => {
         funnelData,
         conversionBySource,
         staffPerformance,
-        avgConversionTime: avgConversionTime.length > 0 ? avgConversionTime[0].avgDays.toFixed(1) : 0,
+        avgConversionTime:
+          avgConversionTime.length > 0
+            ? avgConversionTime[0].avgDays.toFixed(1)
+            : 0,
       },
     });
   } catch (error) {
@@ -293,13 +315,14 @@ export const getRevenueReports = async (req, res) => {
     ]);
 
     // Monthly revenue trend
-    const format = groupBy === "day" ? "%Y-%m-%d" : groupBy === "week" ? "%Y-W%V" : "%Y-%m";
+    const format =
+      groupBy === "day" ? "%Y-%m-%d" : groupBy === "week" ? "%Y-W%V" : "%Y-%m";
     const revenueTrend = await Purchase.aggregate([
       { $match: { ...dateFilter, status: "completed" } },
       {
         $match: {
-          createdAt: { $exists: true, $ne: null, $type: "date" }
-        }
+          createdAt: { $exists: true, $ne: null, $type: "date" },
+        },
       },
       {
         $group: {
@@ -387,8 +410,14 @@ export const getPlacementAnalytics = async (req, res) => {
 
     // Placement rate
     const totalStudents = await Student.countDocuments(dateFilter);
-    const placedStudents = await Application.countDocuments({ ...dateFilter, status: "hired" });
-    const placementRate = totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(2) : 0;
+    const placedStudents = await Application.countDocuments({
+      ...dateFilter,
+      status: "hired",
+    });
+    const placementRate =
+      totalStudents > 0
+        ? ((placedStudents / totalStudents) * 100).toFixed(2)
+        : 0;
 
     // Top employers by placements
     const topEmployers = await Application.aggregate([
@@ -405,7 +434,11 @@ export const getPlacementAnalytics = async (req, res) => {
       {
         $group: {
           _id: "$employer._id",
-          name: { $first: { $concat: ["$employer.firstName", " ", "$employer.lastName"] } },
+          name: {
+            $first: {
+              $concat: ["$employer.firstName", " ", "$employer.lastName"],
+            },
+          },
           email: { $first: "$employer.email" },
           placements: { $sum: 1 },
         },
@@ -438,7 +471,13 @@ export const getPlacementAnalytics = async (req, res) => {
 
     // Average time to placement
     const avgPlacementTime = await Application.aggregate([
-      { $match: { ...dateFilter, status: "hired", updatedAt: { $exists: true } } },
+      {
+        $match: {
+          ...dateFilter,
+          status: "hired",
+          updatedAt: { $exists: true },
+        },
+      },
       {
         $lookup: {
           from: "students",
@@ -451,7 +490,10 @@ export const getPlacementAnalytics = async (req, res) => {
       {
         $project: {
           placementTime: {
-            $divide: [{ $subtract: ["$updatedAt", "$student.createdAt"] }, 86400000], // days
+            $divide: [
+              { $subtract: ["$updatedAt", "$student.createdAt"] },
+              86400000,
+            ], // days
           },
         },
       },
@@ -468,8 +510,8 @@ export const getPlacementAnalytics = async (req, res) => {
       { $match: { ...dateFilter, status: "hired" } },
       {
         $match: {
-          updatedAt: { $exists: true, $ne: null, $type: "date" }
-        }
+          updatedAt: { $exists: true, $ne: null, $type: "date" },
+        },
       },
       {
         $group: {
@@ -487,7 +529,10 @@ export const getPlacementAnalytics = async (req, res) => {
           totalStudents,
           placedStudents,
           placementRate: parseFloat(placementRate),
-          avgPlacementTime: avgPlacementTime.length > 0 ? avgPlacementTime[0].avgDays.toFixed(1) : 0,
+          avgPlacementTime:
+            avgPlacementTime.length > 0
+              ? avgPlacementTime[0].avgDays.toFixed(1)
+              : 0,
         },
         topEmployers,
         placementsByRole,
@@ -518,18 +563,35 @@ export const getEmployerEngagement = async (req, res) => {
 
     // Total employers and active employers
     const totalEmployers = await Employer.countDocuments(dateFilter);
-    const activeEmployers = await Job.distinct("employerId", { ...dateFilter, status: "active" });
+    const activeEmployers = await Job.distinct("employerId", {
+      ...dateFilter,
+      status: "active",
+    });
 
-    // Job posting statistics
-    const jobStats = await Job.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
+    // Comprehensive Job Statistics
+    const [
+      totalJobs,
+      activeJobs,
+      closedJobs,
+      draftJobs,
+      totalApplications,
+      totalHired,
+      rejectedApplications,
+    ] = await Promise.all([
+      Job.countDocuments(dateFilter),
+      Job.countDocuments({ ...dateFilter, status: "active" }),
+      Job.countDocuments({ ...dateFilter, status: "closed" }),
+      Job.countDocuments({ ...dateFilter, status: "draft" }),
+      Application.countDocuments(dateFilter),
+      Application.countDocuments({ ...dateFilter, status: "hired" }),
+      Application.countDocuments({ ...dateFilter, status: "rejected" }),
     ]);
+
+    // Calculate hiring rate
+    const hireRate =
+      totalApplications > 0
+        ? ((totalHired / totalApplications) * 100).toFixed(2)
+        : 0;
 
     // Top employers by job posts
     const topEmployersByJobs = await Job.aggregate([
@@ -546,7 +608,11 @@ export const getEmployerEngagement = async (req, res) => {
       {
         $group: {
           _id: "$employer._id",
-          name: { $first: { $concat: ["$employer.firstName", " ", "$employer.lastName"] } },
+          name: {
+            $first: {
+              $concat: ["$employer.firstName", " ", "$employer.lastName"],
+            },
+          },
           email: { $first: "$employer.email" },
           jobPosts: { $sum: 1 },
           activeJobs: {
@@ -573,15 +639,38 @@ export const getEmployerEngagement = async (req, res) => {
       {
         $group: {
           _id: "$employer._id",
-          name: { $first: { $concat: ["$employer.firstName", " ", "$employer.lastName"] } },
+          name: {
+            $first: {
+              $concat: ["$employer.firstName", " ", "$employer.lastName"],
+            },
+          },
           email: { $first: "$employer.email" },
-          applications: { $sum: 1 },
+          totalApplications: { $sum: 1 },
           hired: {
             $sum: { $cond: [{ $eq: ["$status", "hired"] }, 1, 0] },
           },
+          rejected: {
+            $sum: { $cond: [{ $eq: ["$status", "rejected"] }, 1, 0] },
+          },
+          interviewed: {
+            $sum: { $cond: [{ $eq: ["$status", "interview"] }, 1, 0] },
+          },
         },
       },
-      { $sort: { applications: -1 } },
+      {
+        $addFields: {
+          hireRate: {
+            $cond: [
+              { $gt: ["$totalApplications", 0] },
+              {
+                $multiply: [{ $divide: ["$hired", "$totalApplications"] }, 100],
+              },
+              0,
+            ],
+          },
+        },
+      },
+      { $sort: { totalApplications: -1 } },
       { $limit: 10 },
     ]);
 
@@ -590,8 +679,8 @@ export const getEmployerEngagement = async (req, res) => {
       { $match: dateFilter },
       {
         $match: {
-          createdAt: { $exists: true, $ne: null, $type: "date" }
-        }
+          createdAt: { $exists: true, $ne: null, $type: "date" },
+        },
       },
       {
         $group: {
@@ -608,9 +697,21 @@ export const getEmployerEngagement = async (req, res) => {
         summary: {
           totalEmployers,
           activeEmployers: activeEmployers.length,
-          engagementRate: totalEmployers > 0 ? ((activeEmployers.length / totalEmployers) * 100).toFixed(2) : 0,
+          engagementRate:
+            totalEmployers > 0
+              ? ((activeEmployers.length / totalEmployers) * 100).toFixed(2)
+              : 0,
         },
-        jobStats,
+        jobStats: {
+          totalJobs,
+          activeJobs,
+          closedJobs,
+          draftJobs,
+          totalApplications,
+          totalHired,
+          rejectedApplications,
+          hireRate: parseFloat(hireRate),
+        },
         topEmployersByJobs,
         topEmployersByApplications,
         activityTrend,
@@ -707,8 +808,8 @@ export const getCourseAnalytics = async (req, res) => {
             $cond: [
               { $gt: [{ $size: "$enrollments" }, 0] },
               { $avg: "$enrollments.progress" },
-              0
-            ]
+              0,
+            ],
           },
         },
       },
@@ -754,8 +855,8 @@ export const getCourseAnalytics = async (req, res) => {
       { $match: { status: "completed" } },
       {
         $match: {
-          completedAt: { $exists: true, $ne: null, $type: "date" }
-        }
+          completedAt: { $exists: true, $ne: null, $type: "date" },
+        },
       },
       {
         $group: {
@@ -813,7 +914,9 @@ export const getStaffPerformance = async (req, res) => {
       if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
     }
 
-    const staffFilter = staffId ? { assignedTo: staffId } : { assignedTo: { $exists: true } };
+    const staffFilter = staffId
+      ? { assignedTo: staffId }
+      : { assignedTo: { $exists: true } };
 
     // Staff lead performance
     const staffLeadPerformance = await Lead.aggregate([
@@ -885,7 +988,9 @@ export const getStaffPerformance = async (req, res) => {
 
     // Combine data
     const combinedPerformance = staffLeadPerformance.map((staff) => {
-      const revenueData = staffRevenue.find((r) => r._id?.toString() === staff.staffId?.toString());
+      const revenueData = staffRevenue.find(
+        (r) => r._id?.toString() === staff.staffId?.toString()
+      );
       return {
         ...staff,
         revenue: revenueData?.revenue || 0,
@@ -951,7 +1056,10 @@ export const exportReport = async (req, res) => {
       // Convert to CSV (simplified)
       const csv = convertToCSV(data);
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="${reportType}-report.csv"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${reportType}-report.csv"`
+      );
       return res.send(csv);
     }
 
@@ -981,7 +1089,13 @@ const getOverviewStatsData = async (startDate, endDate) => {
     if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
   }
 
-  const [totalLeads, totalStudents, totalEmployers, totalJobs, totalApplications] = await Promise.all([
+  const [
+    totalLeads,
+    totalStudents,
+    totalEmployers,
+    totalJobs,
+    totalApplications,
+  ] = await Promise.all([
     Lead.countDocuments(dateFilter),
     Student.countDocuments(dateFilter),
     Employer.countDocuments(dateFilter),
@@ -1007,7 +1121,9 @@ const getLeadConversionData = async (startDate, endDate) => {
     if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
   }
 
-  const leads = await Lead.find(dateFilter).select('status source createdAt').lean();
+  const leads = await Lead.find(dateFilter)
+    .select("status source createdAt")
+    .lean();
   return {
     totalLeads: leads.length,
     byStatus: leads.reduce((acc, lead) => {
@@ -1030,7 +1146,7 @@ const getRevenueData = async (startDate, endDate) => {
   }
 
   const purchases = await Purchase.find({ ...dateFilter, status: "completed" })
-    .select('amount type createdAt')
+    .select("amount type createdAt")
     .lean();
 
   return {
@@ -1052,15 +1168,17 @@ const getPlacementData = async (startDate, endDate) => {
   }
 
   const placements = await Application.find({ ...dateFilter, status: "hired" })
-    .populate('studentId', 'firstName lastName')
-    .populate('jobId', 'title')
+    .populate("studentId", "firstName lastName")
+    .populate("jobId", "title")
     .lean();
 
   return {
     totalPlacements: placements.length,
-    placements: placements.map(p => ({
-      student: p.studentId ? `${p.studentId.firstName} ${p.studentId.lastName}` : 'N/A',
-      job: p.jobId?.title || 'N/A',
+    placements: placements.map((p) => ({
+      student: p.studentId
+        ? `${p.studentId.firstName} ${p.studentId.lastName}`
+        : "N/A",
+      job: p.jobId?.title || "N/A",
       date: p.createdAt,
     })),
   };
@@ -1075,13 +1193,13 @@ const getEmployerData = async (startDate, endDate) => {
   }
 
   const employers = await Employer.find(dateFilter)
-    .select('companyName email status createdAt')
+    .select("companyName email status createdAt")
     .lean();
 
   return {
     totalEmployers: employers.length,
-    activeEmployers: employers.filter(e => e.status === 'active').length,
-    employers: employers.map(e => ({
+    activeEmployers: employers.filter((e) => e.status === "active").length,
+    employers: employers.map((e) => ({
       company: e.companyName,
       email: e.email,
       status: e.status,
@@ -1092,13 +1210,13 @@ const getEmployerData = async (startDate, endDate) => {
 
 const getCourseData = async (startDate, endDate) => {
   const courses = await Course.find()
-    .select('title category status createdAt')
+    .select("title category status createdAt")
     .lean();
 
   return {
     totalCourses: courses.length,
-    activeCourses: courses.filter(c => c.status === 'active').length,
-    courses: courses.map(c => ({
+    activeCourses: courses.filter((c) => c.status === "active").length,
+    courses: courses.map((c) => ({
       title: c.title,
       category: c.category,
       status: c.status,
@@ -1116,7 +1234,7 @@ const getStaffData = async (startDate, endDate) => {
   }
 
   // Get staff activities (leads created, applications processed, etc.)
-  const leads = await Lead.find(dateFilter).select('assignedTo').lean();
+  const leads = await Lead.find(dateFilter).select("assignedTo").lean();
   const staffActivity = leads.reduce((acc, lead) => {
     if (lead.assignedTo) {
       acc[lead.assignedTo] = (acc[lead.assignedTo] || 0) + 1;
@@ -1156,7 +1274,11 @@ export const getTopEmployersByJobPosts = async (req, res) => {
       {
         $group: {
           _id: "$employer._id",
-          name: { $first: { $concat: ["$employer.firstName", " ", "$employer.lastName"] } },
+          name: {
+            $first: {
+              $concat: ["$employer.firstName", " ", "$employer.lastName"],
+            },
+          },
           email: { $first: "$employer.email" },
           jobPosts: { $sum: 1 },
           activeJobs: {
@@ -1213,7 +1335,11 @@ export const getTopEmployersByApplications = async (req, res) => {
       {
         $group: {
           _id: "$employer._id",
-          name: { $first: { $concat: ["$employer.firstName", " ", "$employer.lastName"] } },
+          name: {
+            $first: {
+              $concat: ["$employer.firstName", " ", "$employer.lastName"],
+            },
+          },
           email: { $first: "$employer.email" },
           totalApplications: { $sum: 1 },
           hired: {
@@ -1233,10 +1359,7 @@ export const getTopEmployersByApplications = async (req, res) => {
             $cond: [
               { $gt: ["$totalApplications", 0] },
               {
-                $multiply: [
-                  { $divide: ["$hired", "$totalApplications"] },
-                  100,
-                ],
+                $multiply: [{ $divide: ["$hired", "$totalApplications"] }, 100],
               },
               0,
             ],
@@ -1308,10 +1431,7 @@ export const getTopCoursesByPerformance = async (req, res) => {
             $cond: [
               { $gt: ["$totalEnrolled", 0] },
               {
-                $multiply: [
-                  { $divide: ["$completed", "$totalEnrolled"] },
-                  100,
-                ],
+                $multiply: [{ $divide: ["$completed", "$totalEnrolled"] }, 100],
               },
               0,
             ],

@@ -457,7 +457,12 @@ If you have any questions, contact us at ${env.smtpUser}
 }
 
 // Send job moderation status email to employer
-export async function sendJobModerationEmail({ to, jobTitle, action, reasonOrNote }) {
+export async function sendJobModerationEmail({
+  to,
+  jobTitle,
+  action,
+  reasonOrNote,
+}) {
   try {
     const subjectMap = {
       approved: `✅ Your job "${jobTitle}" has been approved`,
@@ -480,7 +485,11 @@ export async function sendJobModerationEmail({ to, jobTitle, action, reasonOrNot
         <p><strong>Job:</strong> ${jobTitle}</p>
         <p><strong>Status:</strong> ${action.replace("_", " ")}</p>
         <p>${messageMap[action] || ""}</p>
-        ${reasonOrNote ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;"><strong>Details:</strong><br/>${reasonOrNote}</div>` : ""}
+        ${
+          reasonOrNote
+            ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;padding:12px;border-radius:8px;"><strong>Details:</strong><br/>${reasonOrNote}</div>`
+            : ""
+        }
         <p style="margin-top:16px;">Regards,<br/>Sabka Pro Team</p>
       </div>
     `;
@@ -551,6 +560,57 @@ export async function sendOTPEmail(email, otp) {
   }
 }
 
+export async function sendSkillAcademyOTPEmail({ email, otp, name }) {
+  try {
+    const mailOptions = {
+      from: `"Sabka Skill Academy" <${env.smtpUser}>`,
+      to: email,
+      subject: "Your Skill Academy OTP Code",
+      html: `
+        <div style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #020617; padding: 40px 0;">
+          <table align="center" width="600" cellpadding="0" cellspacing="0" style="background-color: #0f172a; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(15,23,42,0.6);">
+            <tr>
+              <td align="center" style="background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); padding: 32px;">
+                <h1 style="color:#f9fafb;margin:0;font-size:24px;">Sabka Skill Academy</h1>
+                <p style="color:#e5e7eb;margin:8px 0 0;font-size:14px;">Verify your learning account</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px 28px; text-align:center;">
+                <p style="color:#e5e7eb;font-size:15px;margin:0 0 16px 0;">
+                  Hi ${name || "Learner"},
+                </p>
+                <p style="color:#9ca3af;font-size:14px;margin:0 0 24px 0;line-height:1.6;">
+                  Use the following one-time password (OTP) to complete your registration for
+                  <strong>Sabka Skill Academy</strong>.
+                </p>
+                <div style="background:rgba(15,23,42,0.9);border-radius:12px;padding:18px 24px;display:inline-block;border:1px solid #4f46e5;">
+                  <span style="font-family:'Courier New',monospace;font-size:32px;letter-spacing:10px;color:#f9fafb;">${otp}</span>
+                </div>
+                <p style="color:#9ca3af;font-size:13px;margin:24px 0 0 0;">
+                  This code is valid for <strong>10 minutes</strong>.<br/>
+                  Do not share this code with anyone.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="background-color:#020617;padding:16px;color:#6b7280;font-size:12px;">
+                © ${new Date().getFullYear()} Sabka Skill Academy · Powered by Sabka Pro
+              </td>
+            </tr>
+          </table>
+        </div>
+      `,
+      text: `Your OTP for Sabka Skill Academy is: ${otp}\n\nThis code will expire in 10 minutes.\nIf you didn't request this OTP, please ignore this email.`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 Skill Academy OTP email sent to: ${email}`);
+  } catch (error) {
+    console.error("❌ Failed to send Skill Academy OTP email:", error.message);
+  }
+}
+
 // Import email templates
 import { emailTemplates } from "./emailTemplates.js";
 
@@ -565,7 +625,10 @@ export async function sendApplicationStatusEmail(data) {
       rejected: { emoji: "❌", color: "#ef4444" },
     };
 
-    const config = statusConfig[data.newStatus] || { emoji: "📋", color: "#6b7280" };
+    const config = statusConfig[data.newStatus] || {
+      emoji: "📋",
+      color: "#6b7280",
+    };
 
     await transporter.sendMail({
       from: `"Sabka Pro" <${env.smtpUser}>`,
@@ -610,9 +673,14 @@ export async function sendApplicationReceivedEmail(data) {
       html: emailTemplates.applicationReceived(data),
     });
 
-    console.log(`✅ Application received email sent to: ${data.candidateEmail}`);
+    console.log(
+      `✅ Application received email sent to: ${data.candidateEmail}`
+    );
   } catch (error) {
-    console.error("❌ Failed to send application received email:", error.message);
+    console.error(
+      "❌ Failed to send application received email:",
+      error.message
+    );
   }
 }
 

@@ -12,6 +12,7 @@ import {
   sendOTPEmail,
   sendApprovalEmail,
   sendRegistrationConfirmation,
+  sendSkillAcademyOTPEmail,
 } from "../utils/mailer.js";
 
 // Change password (authenticated)
@@ -31,10 +32,15 @@ export async function changePassword(req, res, next) {
 
     const user = await UserModel.findById(req.user.id);
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
-    const valid = await bcrypt.compare(parsed.currentPassword, user.passwordHash);
+    const valid = await bcrypt.compare(
+      parsed.currentPassword,
+      user.passwordHash
+    );
     if (!valid) {
       return res
         .status(400)
@@ -42,11 +48,17 @@ export async function changePassword(req, res, next) {
     }
 
     // Prevent reusing the same password
-    const sameAsOld = await bcrypt.compare(parsed.newPassword, user.passwordHash);
+    const sameAsOld = await bcrypt.compare(
+      parsed.newPassword,
+      user.passwordHash
+    );
     if (sameAsOld) {
       return res
         .status(400)
-        .json({ success: false, message: "New password cannot be same as old password" });
+        .json({
+          success: false,
+          message: "New password cannot be same as old password",
+        });
     }
 
     user.passwordHash = await bcrypt.hash(parsed.newPassword, 10);
@@ -54,7 +66,10 @@ export async function changePassword(req, res, next) {
     user.passwordChangedAt = new Date();
     await user.save();
 
-    res.json({ success: true, message: "Password changed successfully. Please login again." });
+    res.json({
+      success: true,
+      message: "Password changed successfully. Please login again.",
+    });
   } catch (err) {
     console.error("❌ Change password error:", err);
     next(err);
@@ -84,6 +99,17 @@ const sendOTPSchema = z.object({
 });
 
 const verifyOTPSchema = z.object({
+  phone: z.string().min(10),
+  otp: z.string().length(6),
+});
+
+const skillAcademySendOTPSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  phone: z.string().min(10),
+});
+
+const skillAcademyVerifyOTPSchema = z.object({
   phone: z.string().min(10),
   otp: z.string().length(6),
 });
@@ -205,6 +231,80 @@ export async function verifyOTP(req, res, next) {
     });
   } catch (err) {
     console.error("❌ Verify OTP error:", err);
+    next(err);
+  }
+}
+
+export async function skillAcademySendOTP(req, res, next) {
+  try {
+    console.log("📚 Skill Academy Send OTP request:", req.body);
+    const parsed = skillAcademySendOTPSchema.parse(req.body);
+
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await OTPModel.deleteMany({ phone: parsed.phone });
+
+    await OTPModel.create({
+      phone: parsed.phone,
+      email: parsed.email,
+      otp,
+      expiresAt,
+    });
+
+    sendSkillAcademyOTPEmail({
+      email: parsed.email,
+      otp,
+      name: parsed.name,
+    }).catch((err) =>
+      console.error("Failed to send Skill Academy OTP email:", err.message)
+    );
+
+    res.json({
+      success: true,
+      message: "OTP sent successfully",
+      expiresIn: 600,
+      otp: process.env.NODE_ENV === "development" ? otp : undefined,
+    });
+  } catch (err) {
+    console.error("❌ Skill Academy send OTP error:", err);
+    next(err);
+  }
+}
+
+export async function skillAcademyVerifyOTP(req, res, next) {
+  try {
+    console.log("🔍 Skill Academy Verify OTP request:", req.body);
+    const parsed = skillAcademyVerifyOTPSchema.parse(req.body);
+
+    const otpDoc = await OTPModel.findOne({
+      phone: parsed.phone,
+      otp: parsed.otp,
+      verified: false,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!otpDoc) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired OTP",
+      });
+    }
+
+    otpDoc.verified = true;
+    await otpDoc.save();
+
+    console.log(
+      "✅ Skill Academy OTP verified successfully for:",
+      parsed.phone
+    );
+
+    res.json({
+      success: true,
+      message: "OTP verified successfully",
+    });
+  } catch (err) {
+    console.error("❌ Skill Academy verify OTP error:", err);
     next(err);
   }
 }
@@ -394,7 +494,10 @@ export async function login(req, res, next) {
       success: true,
       message: "Login successful",
       data: {
-        user: serializeUser({ ...user.toObject(), mustChangePassword: mustChange }),
+        user: serializeUser({
+          ...user.toObject(),
+          mustChangePassword: mustChange,
+        }),
         profile: profile || null,
         token,
       },

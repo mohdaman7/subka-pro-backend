@@ -88,6 +88,122 @@ export const courseController = {
     }
   },
 
+  // Public listing with pagination & basic filters for Skill Academy and other consumers
+  async listPublicCoursesPaginated(req, res, next) {
+    try {
+      let {
+        page = 1,
+        limit = 6,
+        search = "",
+        category,
+        sort = "newest",
+      } = req.query;
+
+      page = Math.max(1, parseInt(page, 10) || 1);
+      limit = Math.max(1, Math.min(50, parseInt(limit, 10) || 6));
+
+      const match = { type: "parent", status: { $ne: "archived" } };
+
+      if (category) {
+        match.category = category;
+      }
+
+      if (search && typeof search === "string" && search.trim()) {
+        const term = search.trim();
+        match.$or = [
+          { title: { $regex: term, $options: "i" } },
+          { description: { $regex: term, $options: "i" } },
+        ];
+      }
+
+      let sortStage = { createdAt: -1 };
+      switch (sort) {
+        case "popular":
+          sortStage = { enrolledCount: -1 };
+          break;
+        case "rating":
+          sortStage = { rating: -1 };
+          break;
+        case "price-low":
+          sortStage = { bundlePrice: 1 };
+          break;
+        default:
+          sortStage = { createdAt: -1 };
+      }
+
+      const pipeline = [
+        { $match: match },
+        {
+          $lookup: {
+            from: "courses",
+            localField: "_id",
+            foreignField: "parentCourse",
+            as: "modules",
+          },
+        },
+        {
+          $addFields: {
+            moduleCount: { $size: "$modules" },
+            sumModulePrice: {
+              $sum: {
+                $map: {
+                  input: "$modules",
+                  as: "m",
+                  in: { $ifNull: ["$$m.pricing.individualPrice", 0] },
+                },
+              },
+            },
+            bundlePrice: { $ifNull: ["$pricing.bundlePrice", 0] },
+          },
+        },
+        {
+          $project: {
+            title: 1,
+            description: 1,
+            category: 1,
+            thumbnail: 1,
+            instructor: 1,
+            level: 1,
+            tags: 1,
+            status: 1,
+            enrolledCount: 1,
+            rating: 1,
+            moduleCount: 1,
+            sumModulePrice: 1,
+            bundlePrice: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        { $sort: sortStage },
+        {
+          $facet: {
+            data: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+            total: [{ $count: "count" }],
+          },
+        },
+      ];
+
+      const result = await CourseModel.aggregate(pipeline);
+      const data = result[0]?.data || [];
+      const total = result[0]?.total?.[0]?.count || 0;
+      const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
+
+      return res.json({
+        success: true,
+        data: {
+          items: data,
+          page,
+          limit,
+          total,
+          totalPages,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   // Public course details. If parent -> include modules. If module -> include lessons (filtered if not accessible)
   async getCourseById(req, res, next) {
     try {

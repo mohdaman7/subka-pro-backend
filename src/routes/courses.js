@@ -7,6 +7,7 @@ const router = Router();
 
 // Public
 router.get("/", courseController.listPublicCourses);
+router.get("/paginated", courseController.listPublicCoursesPaginated);
 
 // ✅ ADMIN ROUTES MUST COME BEFORE PARAM ROUTES
 router.get("/admin", courseController.adminListCourses);
