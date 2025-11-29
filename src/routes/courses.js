@@ -19,7 +19,7 @@ router.post(
 );
 router.post(
   "/admin/:id/lessons",
-  authenticate,
+  // authenticate,
   courseController.adminAddLesson
 );
 router.put(
