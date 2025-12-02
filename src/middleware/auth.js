@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { UserModel } from "../models/User.js";
+import { SkillAcademyUserModel } from "../models/SkillAcademyUser.js";
 
 // ✅ Authenticate Middleware
 export async function authenticate(req, res, next) {
@@ -18,6 +19,25 @@ export async function authenticate(req, res, next) {
     // Handle admin token
     if (decoded.id === "admin" && decoded.role === "admin") {
       req.user = { id: "admin", role: "admin", email: decoded.email };
+      return next();
+    }
+
+    // Handle skill academy user token
+    if (decoded.type === "skill-academy") {
+      const skillAcademyUser = await SkillAcademyUserModel.findById(
+        decoded.id
+      ).select("-passwordHash");
+      if (!skillAcademyUser) {
+        return res
+          .status(401)
+          .json({ success: false, message: "User not found" });
+      }
+
+      req.user = {
+        id: skillAcademyUser._id.toString(),
+        type: "skill-academy",
+        email: skillAcademyUser.email,
+      };
       return next();
     }
 
@@ -57,6 +77,23 @@ export async function maybeAuthenticate(req, _res, next) {
 
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, env.jwtSecret);
+
+    // Handle skill academy user token
+    if (decoded.type === "skill-academy") {
+      const skillAcademyUser = await SkillAcademyUserModel.findById(
+        decoded.id
+      ).select("-passwordHash");
+      if (skillAcademyUser) {
+        req.user = {
+          id: skillAcademyUser._id.toString(),
+          type: "skill-academy",
+          email: skillAcademyUser.email,
+        };
+      }
+      return next();
+    }
+
+    // Handle regular user token
     const user = await UserModel.findById(decoded.id).select("-passwordHash");
     if (user) {
       req.user = { id: user._id.toString(), role: user.role };

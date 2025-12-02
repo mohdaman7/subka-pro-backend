@@ -12,6 +12,10 @@ router.post("/verify-otp", authController.verifyOTP);
 router.post("/skill-academy/send-otp", authController.skillAcademySendOTP);
 router.post("/skill-academy/verify-otp", authController.skillAcademyVerifyOTP);
 
+// Skill Academy Registration & Login (Direct, No Approval)
+router.post("/skill-academy/register", authController.skillAcademyRegister);
+router.post("/skill-academy/login", authController.skillAcademyLogin);
+
 // Authentication Routes (Choose one approach)
 
 // Approach 1: Single register endpoint (recommended)

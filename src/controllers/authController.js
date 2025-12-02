@@ -6,6 +6,7 @@ import { UserModel } from "../models/User.js";
 import { StudentModel } from "../models/Student.js";
 import { EmployerModel } from "../models/Employer.js";
 import { OTPModel } from "../models/OTP.js";
+import { SkillAcademyUserModel } from "../models/SkillAcademyUser.js";
 import { env } from "../config/env.js";
 import {
   sendRegistrationAlert,
@@ -53,12 +54,10 @@ export async function changePassword(req, res, next) {
       user.passwordHash
     );
     if (sameAsOld) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "New password cannot be same as old password",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "New password cannot be same as old password",
+      });
     }
 
     user.passwordHash = await bcrypt.hash(parsed.newPassword, 10);
@@ -587,4 +586,164 @@ function serializeUser(user) {
     passwordChangedAt: user.passwordChangedAt || null,
     createdAt: user.createdAt,
   };
+}
+
+// Skill Academy Registration (Direct, No Approval)
+export async function skillAcademyRegister(req, res, next) {
+  try {
+    console.log("📚 Skill Academy Register request:", req.body);
+
+    const schema = z.object({
+      name: z.string().min(1, "Name is required"),
+      email: z.string().email("Invalid email"),
+      phone: z.string().min(10, "Invalid phone number"),
+      password: z.string().min(6, "Password must be at least 6 characters"),
+    });
+
+    const parsed = schema.parse(req.body);
+
+    // Check if user already exists
+    const existingUser = await SkillAcademyUserModel.findOne({
+      $or: [{ email: parsed.email }, { phone: parsed.phone }],
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message:
+          existingUser.email === parsed.email
+            ? "Email already registered"
+            : "Phone number already registered",
+      });
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(parsed.password, 10);
+
+    // Create user directly (NO APPROVAL NEEDED)
+    const user = await SkillAcademyUserModel.create({
+      name: parsed.name,
+      email: parsed.email,
+      phone: parsed.phone,
+      passwordHash,
+      phoneVerified: true,
+      isActive: true,
+    });
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        type: "skill-academy",
+      },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "30d" }
+    );
+
+    console.log("✅ Skill Academy user registered successfully:", user.email);
+
+    res.status(201).json({
+      success: true,
+      message: "Registration successful! Welcome to Sabka Skill Academy.",
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+        },
+        token,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Skill Academy register error:", err);
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: err.errors[0]?.message || "Validation error",
+      });
+    }
+    next(err);
+  }
+}
+
+// Skill Academy Login
+export async function skillAcademyLogin(req, res, next) {
+  try {
+    console.log("📚 Skill Academy Login request:", req.body);
+
+    const schema = z.object({
+      email: z.string().email("Invalid email"),
+      password: z.string().min(6, "Invalid password"),
+    });
+
+    const parsed = schema.parse(req.body);
+
+    // Find user
+    const user = await SkillAcademyUserModel.findOne({
+      email: parsed.email,
+      isActive: true,
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(
+      parsed.password,
+      user.passwordHash
+    );
+
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
+
+    // Generate JWT token
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        type: "skill-academy",
+      },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "30d" }
+    );
+
+    console.log("✅ Skill Academy user logged in successfully:", user.email);
+
+    res.json({
+      success: true,
+      message: "Login successful!",
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+        },
+        token,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Skill Academy login error:", err);
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: err.errors[0]?.message || "Validation error",
+      });
+    }
+    next(err);
+  }
 }

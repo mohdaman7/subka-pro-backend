@@ -9,6 +9,7 @@ import { env } from "./config/env.js";
 import { connectToDatabase } from "./config/db.js";
 import { errorHandler } from "./middleware/error.js";
 import { notFound } from "./middleware/notFound.js";
+import { initializeSocket } from "./socket/notificationSocket.js";
 import authRoutes from "./routes/auth.js";
 import jobRoutes from "./routes/jobs.js";
 import applicationRoutes from "./routes/applications.js";
@@ -24,6 +25,7 @@ import resumeRoutes from "./routes/resume.js";
 import atsManagementRoutes from "./routes/atsManagement.js";
 import analyticsRoutes from "./routes/analytics.js";
 import enrollmentRoutes from "./routes/enrollment.js";
+import notificationRoutes from "./routes/notifications.js";
 
 // Rate limiting configuration
 // const limiter = rateLimit({
@@ -135,6 +137,7 @@ async function bootstrap() {
     app.use("/api/resume", resumeRoutes);
     app.use("/api/analytics", analyticsRoutes);
     app.use("/api/enrollments", enrollmentRoutes);
+    app.use("/api/notifications", notificationRoutes);
 
     // API documentation route (you can implement Swagger later)
     app.get("/api/docs", (_req, res) => {
@@ -186,6 +189,13 @@ async function bootstrap() {
       console.log(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
       console.log(`❤️  Health check: http://localhost:${PORT}/health`);
     });
+
+    // Initialize Socket.io
+    const io = initializeSocket(server);
+    console.log("🔌 Socket.io initialized successfully!");
+
+    // Make io accessible to routes via app.io
+    app.io = io;
 
     // Handle server errors
     server.on("error", (error) => {
